@@ -530,6 +530,7 @@ tbody tr:hover{background:var(--card2)}
 
     <div class="card">
       <h2>Tus apartados y tu objetivo</h2>
+      <div class="hint" id="setImportNote" style="display:none;color:#fbbf24;margin-bottom:8px"></div>
       <div class="hint">«Inversión»: apartados que sigues con aportado y ganancia. «Dólares»: los apuntas en dólares y se convierten a tu moneda. «Objetivo»: el % que quieres en cada inversión.</div>
       <div class="wz-row"><label>Plantillas de reparto</label>
         <div class="tplrow" id="setTplRow">
@@ -554,6 +555,8 @@ tbody tr:hover{background:var(--card2)}
     <div class="card">
       <h2>Asistente y datos</h2>
       <div class="hint">Todo se guarda solo en este navegador. Haz copias de seguridad desde Histórico antes de borrar o cambiar de dispositivo.</div>
+      <div class="hint" id="appVersion"></div>
+      <button type="button" class="secondary" id="forceUpdateBtn" style="width:100%;display:none">🔄 Buscar actualización de la app</button>
       <button type="button" class="secondary" id="openWizardBtn" style="width:100%">Abrir el asistente de bienvenida</button>
       <button type="button" class="secondary" id="loadDemoBtn" style="width:100%">Cargar datos de ejemplo</button>
       <button type="button" class="secondary" id="resetAllBtn" style="width:100%">Borrar todos mis datos y empezar de cero</button>
@@ -660,6 +663,7 @@ function getPinHash(){ try{ return localStorage.getItem(PIN_KEY); }catch(e){ ret
 })();
 
 // ---- Configuración (activos, objetivo, moneda). Los usuarios antiguos se migran con sus valores de siempre ----
+const APP_VERSION = '4';
 const CONFIG_KEY = 'finanzas_config_v1';
 const LEGACY_META = {};
 const LEGACY_TARGETS = {};
@@ -2392,6 +2396,41 @@ function restoreFullBackup(obj, reload){
   try{ sessionStorage.removeItem('finanzas_unlocked'); }catch(e){}
   if(reload!==false) location.reload();
 }
+function analyzeBackup(raw){
+  const text = String(raw||'').replace(/^\uFEFF/,'').trim();
+  if(!text) return {kind:'error', msg:'No hay nada que leer: el archivo o el cuadro están vacíos.'};
+  let obj;
+  try{ obj = JSON.parse(text); }
+  catch(e){ return {kind:'error', msg:`No he podido leerlo como datos de la app (he leído ${text.length} caracteres). Si lo pegaste, comprueba que copiaste TODO el texto, de la primera llave a la última. Si es un archivo, tiene que ser el que se llama «mis-finanzas-copia-completa-…».`}; }
+  if(obj && obj.app===BACKUP_APP_ID && obj.keys && typeof obj.keys==='object') return {kind:'full', obj};
+  if(Array.isArray(obj) && obj.length && obj.every(r=> r && typeof r.date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)))
+    return {kind:'records', records:obj, msg:'Este archivo es solo la lista de registros (lo que se descarga con «Exportar JSON»), no la copia completa: no trae tus apartados, objetivo, aportaciones ni presupuesto. Para la copia completa busca el archivo «mis-finanzas-copia-completa-…».'};
+  return {kind:'error', msg:'Este archivo no es de esta app.'};
+}
+// crea los apartados a partir de los nombres que aparecen en los registros (para empezar de cero con tu histórico)
+let settingsNote = '';
+function importRecordsAsSetup(records){
+  const all = [];
+  records.forEach(r=> Object.keys(r).forEach(k=>{ if(k!=='date' && k!=='note' && !all.includes(k)) all.push(k); }));
+  // solo los apartados que siguen con dinero en los últimos registros; los que llevan a 0 desde hace tiempo se ignoran
+  const recent = [...records].sort((a,b)=>a.date.localeCompare(b.date)).slice(-7);
+  let names = all.filter(k=> recent.some(r=> Math.abs(Number(r[k])||0) > 0));
+  if(!names.length) names = all;
+  const skipped = all.filter(k=>!names.includes(k));
+  ASSETS.splice(0, ASSETS.length, ...names); saveAssetsList();
+  CAT_NAMES.forEach(c=>CATEGORIES[c].splice(0));
+  CONFIG.meta = {}; CONFIG.targets = {};
+  names.forEach(n=>{
+    const liquid = /cuenta|efectivo|personal|ahorro|corriente|banco|cash/i.test(n);
+    CATEGORIES[liquid ? 'Líquido' : 'Renta variable'].push(n);
+    CONFIG.meta[n] = {invest: !liquid};
+  });
+  saveCategories();
+  CONFIG.onboarded = true; CONFIG.demo = false; saveConfig();
+  data.splice(0, data.length, ...records.map(r=>({...r})).sort((a,b)=>a.date.localeCompare(b.date))); save(data);
+  settingsNote = `He importado ${records.length} registros y creado ${names.length} apartados (${names.join(', ')})` + (skipped.length ? `. No he creado ${skipped.join(', ')} porque está a 0 en tus últimos registros (si lo quieres, añádelo abajo; su histórico se conserva)` : '') + `. Revisa la categoría de cada uno, marca cuáles son inversión y pon tu objetivo. Si tenías aportaciones apuntadas, ponlas con el lápiz ✎ de Comparador → Ganancias.`;
+  closeWizard(); render(); showTab('settings');
+}
 let pendingBackup = null;
 document.getElementById('exportFullBtn').onclick = async ()=>{
   const info = document.getElementById('restoreInfo');
@@ -2403,14 +2442,15 @@ document.getElementById('exportFullBtn').onclick = async ()=>{
 function loadPendingBackup(text){
   const info = document.getElementById('restoreInfo'), btn = document.getElementById('restoreFullBtn');
   pendingBackup = null; btn.style.display = 'none';
-  try{
-    const obj = JSON.parse(text);
-    if(!obj || obj.app!==BACKUP_APP_ID || !obj.keys) throw new Error('formato');
-    pendingBackup = obj;
-    const recs = (()=>{ try{ return JSON.parse(obj.keys['finanzas_ignacio_v1']||'[]').length; }catch(e){ return 0; } })();
-    info.textContent = `Copia del ${String(obj.created||'').slice(0,10)} con ${recs} registros. Si la restauras, REEMPLAZA todo lo que hay ahora en esta app.`;
+  const r = analyzeBackup(text);
+  if(r.kind==='full'){
+    pendingBackup = r.obj;
+    const recs = (()=>{ try{ return JSON.parse(r.obj.keys['finanzas_ignacio_v1']||'[]').length; }catch(e){ return 0; } })();
+    info.textContent = `Copia del ${String(r.obj.created||'').slice(0,10)} con ${recs} registros. Si la restauras, REEMPLAZA todo lo que hay ahora en esta app.`;
     btn.style.display = 'block';
-  }catch(e){ info.textContent = 'Eso no es una copia completa de esta app.'; }
+  } else if(r.kind==='records'){
+    info.textContent = r.msg + ' Para añadir esos registros a los que ya tienes, usa «Importar archivo» (más arriba).';
+  } else info.textContent = r.msg;
 }
 document.getElementById('restoreFile').onchange = ev=>{
   const f = ev.target.files[0];
@@ -2748,6 +2788,14 @@ function confirmTwice(btn, askText, fn){
   btn.dataset.orig = btn.textContent; btn.dataset.armed = '1'; btn.textContent = askText;
   setTimeout(()=>{ if(btn.dataset.armed==='1'){ btn.dataset.armed='0'; btn.textContent = btn.dataset.orig; } }, 5000);
 }
+function canForceUpdate(){ return typeof claude==='undefined' && 'serviceWorker' in navigator && /^https?:/.test(location.protocol); }
+async function forceUpdate(){
+  try{
+    if('serviceWorker' in navigator){ const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r=>r.unregister())); }
+    if(window.caches){ const ks = await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+  }catch(e){}
+  location.href = location.pathname + '?actualizado=' + Date.now();
+}
 function resetAllData(){
   try{
     const ks = [];
@@ -2786,6 +2834,10 @@ function renderSettings(){
   else { sEl.innerHTML = `Total del objetivo: <b>${sumT}%</b>` + (sumT!==100 ? ' <span class="diffneg">— debería sumar 100%</span>' : ' <span class="diffpos">✓</span>'); }
   const demo = document.getElementById('demoBanner');
   if(demo) demo.style.display = CONFIG.demo ? 'block' : 'none';
+  document.getElementById('appVersion').textContent = 'Versión ' + APP_VERSION;
+  document.getElementById('forceUpdateBtn').style.display = canForceUpdate() ? 'block' : 'none';
+  const sn = document.getElementById('setImportNote');
+  if(sn){ sn.style.display = settingsNote ? 'block' : 'none'; sn.textContent = settingsNote; }
 }
 document.getElementById('setCurrency').onchange = ()=>{
   CONFIG.currency = document.getElementById('setCurrency').value; saveConfig(); render();
@@ -2840,6 +2892,7 @@ document.getElementById('setTplRow').addEventListener('click', e=>{
   };
   if(Object.keys(CONFIG.targets).length) confirmTwice(b, 'Cambia tu objetivo actual. ¿Seguro?', apply); else apply();
 });
+document.getElementById('forceUpdateBtn').onclick = ()=> forceUpdate();
 document.getElementById('openWizardBtn').onclick = ()=> openWizard();
 document.getElementById('loadDemoBtn').onclick = e=> confirmTwice(e.target, 'Esto sustituye tus datos actuales. ¿Seguro?', ()=>{ loadDemoData(); render(); showTab('resumen'); });
 document.getElementById('resetAllBtn').onclick = e=> confirmTwice(e.target, '¿Seguro? Se borra TODO. Pulsa otra vez', resetAllData);
@@ -2967,7 +3020,7 @@ function renderWizard(){
     html = wizShell('👋 Bienvenido a Mis Finanzas',
       `<p class="wz-p">Aquí llevas el seguimiento de tu dinero y tus inversiones: cuánto tienes, cuánto has ganado, cómo está repartido y qué te conviene hacer.</p>
        <p class="wz-p">En 1 minuto lo dejamos a tu medida: tu moneda, tus apartados (cuenta, fondos, bitcoin…) y el reparto que buscas. Todo se guarda solo en este navegador.</p>`,
-      {back:false, next:'Empezar', extra:(W.reopen ? `<div class="hint" style="margin-top:10px;color:#fbbf24">⚠️ Ya tienes la app configurada. Si sigues, el asistente <b>reemplaza tu lista de apartados y tu objetivo</b>. Tus registros no se borran, pero los apartados que no vuelvas a marcar dejarán de verse. Puedes salir con «Cerrar sin cambios».</div>` : '') + `<button type="button" class="secondary" id="wzDemo" style="width:100%;margin-top:10px">Probar con datos de ejemplo</button>` + (W.reopen ? '' : `<div class="sectiondiv"></div><div class="wz-row"><label>¿Ya tienes una copia completa de esta app? Restáurala aquí</label><input type="file" id="wzRestore"></div><details class="pastebox"><summary>¿No te deja elegir el archivo? Pega aquí su contenido</summary><textarea id="wzPaste" rows="4" placeholder="Pega aquí el texto de la copia completa"></textarea><button type="button" class="secondary" id="wzPasteBtn" style="width:100%">Restaurar desde el texto</button></details><div class="wz-err" id="wzRestoreErr"></div>`)});
+      {back:false, next:'Empezar', extra:(W.reopen ? `<div class="hint" style="margin-top:10px;color:#fbbf24">⚠️ Ya tienes la app configurada. Si sigues, el asistente <b>reemplaza tu lista de apartados y tu objetivo</b>. Tus registros no se borran, pero los apartados que no vuelvas a marcar dejarán de verse. Puedes salir con «Cerrar sin cambios».</div>` : '') + `<button type="button" class="secondary" id="wzDemo" style="width:100%;margin-top:10px">Probar con datos de ejemplo</button>` + (W.reopen ? '' : `<div class="sectiondiv"></div><div class="wz-row"><label>¿Ya tienes una copia completa de esta app? Restáurala aquí</label><input type="file" id="wzRestore"></div><details class="pastebox"><summary>¿No te deja elegir el archivo? Pega aquí su contenido</summary><textarea id="wzPaste" rows="4" placeholder="Pega aquí el texto de la copia completa"></textarea><button type="button" class="secondary" id="wzPasteBtn" style="width:100%">Restaurar desde el texto</button></details><div class="wz-err" id="wzRestoreErr"></div><div id="wzRestoreAct"></div>`) + `<div class="hint" style="text-align:center;margin-top:14px">Versión ${APP_VERSION}</div>`});
   } else if(W.step===1){
     html = wizShell('Tu moneda y tu edad',
       `<div class="wz-row"><label>Moneda en la que llevas las cuentas</label><select id="wzCur"><option value="EUR">Euro (€)</option><option value="USD">Dólar ($)</option><option value="GBP">Libra (£)</option></select></div>
@@ -3024,16 +3077,13 @@ function renderWizard(){
     };
   }
   if(W.step===0 && $('wzPasteBtn')){
-    $('wzPasteBtn').onclick = ()=>{
-      try{ restoreFullBackup(JSON.parse($('wzPaste').value.trim())); }
-      catch(e){ $('wzRestoreErr').textContent = 'Eso no es una copia completa de esta app.'; }
-    };
+    $('wzPasteBtn').onclick = ()=> wizHandleBackupText($('wzPaste').value);
   }
   if(W.step===0 && $('wzRestore')){
     $('wzRestore').onchange = ev=>{
       const f = ev.target.files[0]; if(!f) return;
       const r = new FileReader();
-      r.onload = ()=>{ try{ restoreFullBackup(JSON.parse(r.result)); }catch(e){ $('wzRestoreErr').textContent = 'Ese archivo no es una copia completa de esta app.'; } };
+      r.onload = ()=> wizHandleBackupText(r.result);
       r.readAsText(f);
     };
   }
@@ -3090,6 +3140,17 @@ function renderWizard(){
   }
   if(W.step===5){
     $('wzNext').onclick = ()=>{ closeWizard(); showTab('resumen'); };
+  }
+}
+function wizHandleBackupText(text){
+  const err = document.getElementById('wzRestoreErr'), act = document.getElementById('wzRestoreAct');
+  err.textContent = ''; act.innerHTML = '';
+  const r = analyzeBackup(text);
+  if(r.kind==='full'){ restoreFullBackup(r.obj); return; }
+  err.textContent = r.msg;
+  if(r.kind==='records'){
+    act.innerHTML = `<button type="button" id="wzRecBtn" style="width:100%;margin-top:8px">Importar solo los registros (${r.records.length})</button>`;
+    document.getElementById('wzRecBtn').onclick = ()=> importRecordsAsSetup(r.records);
   }
 }
 function wizFinish(){
