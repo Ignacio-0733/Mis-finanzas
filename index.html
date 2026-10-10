@@ -242,6 +242,15 @@ tbody tr:hover{background:var(--card2)}
     <div id="lockError" style="color:var(--neg);font-size:.8rem;margin-top:10px;min-height:1em"></div>
   </div>
 </div>
+<div class="lockscreen" id="vaultLock" style="display:none"><div class="lockbox">
+  <div class="lock-icon">🔐</div>
+  <h2 style="margin:10px 0 4px">Mis Finanzas</h2>
+  <div class="hint" style="margin-bottom:14px">Tus datos están cifrados. Escribe tu contraseña.</div>
+  <input type="password" id="vaultPass" placeholder="Contraseña" autocomplete="current-password">
+  <button id="vaultUnlockBtn">Desbloquear</button>
+  <div id="vaultErr" style="color:var(--neg);font-size:.8rem;margin-top:10px;min-height:1em"></div>
+  <button type="button" class="secondary" id="vaultForgotBtn" style="margin-top:14px;width:100%;font-size:.78rem">He olvidado la contraseña</button>
+</div></div>
 <div class="wizard" id="wizard" style="display:none"><div class="wizard-box" id="wizardBox"></div></div>
 <div class="wrap">
   <h1>💰 Mis Finanzas</h1>
@@ -552,6 +561,11 @@ tbody tr:hover{background:var(--card2)}
       <button type="button" id="newAssetAddBtn">➕ Añadir apartado</button>
     </div>
 
+    <div class="card" id="encCard">
+      <h2>🔐 Cifrado de tus datos</h2>
+      <div id="encBody"></div>
+    </div>
+
     <div class="card">
       <h2>Asistente y datos</h2>
       <div class="hint">Todo se guarda solo en este navegador. Haz copias de seguridad desde Histórico antes de borrar o cambiar de dispositivo.</div>
@@ -606,6 +620,8 @@ tbody tr:hover{background:var(--card2)}
       </div>
       <div class="sectiondiv"></div>
       <div class="hint"><b>Copia completa</b>: guarda TODO (registros, movimientos, ajustes, presupuesto, PIN…). Úsala para cambiar de móvil o de navegador, o para pasar a la versión instalable.</div>
+      <div class="wz-row" id="backupPassRow"><label>Contraseña para cifrar la copia <small>(recomendable; si la pones, solo se abrirá con ella. Mínimo 8 caracteres)</small></label><input type="password" id="backupPass" autocomplete="new-password"></div>
+      <div class="hint" id="backupEncNote" style="display:none">🔐 Con el cifrado activado, las copias salen cifradas con tu contraseña.</div>
       <button type="button" id="exportFullBtn" style="width:100%">⬇️ Descargar copia completa</button>
       <button type="button" class="secondary" id="exportTextBtn" style="width:100%">📋 Copiar la copia como texto</button>
       <textarea id="backupText" readonly rows="4" style="display:none;margin-top:8px" placeholder=""></textarea>
@@ -617,15 +633,16 @@ tbody tr:hover{background:var(--card2)}
         <textarea id="restorePaste" rows="4" placeholder="Pega aquí el texto de la copia completa"></textarea>
         <button type="button" class="secondary" id="restorePasteBtn" style="width:100%">Cargar el texto</button></details>
       <div class="hint" id="restoreInfo" style="margin-top:6px"></div>
+      <div id="restoreDecrypt" style="display:none"><input type="password" id="restorePass" placeholder="Contraseña de la copia" autocomplete="current-password"><button type="button" class="secondary" id="restoreDecryptBtn" style="width:100%">Descifrar</button></div>
       <button type="button" class="secondary" id="restoreFullBtn" style="display:none;width:100%">Restaurar y reemplazar todo</button>
     </div>
   </div>
 </div>
 
-<script>
+<script type="text/plain" id="appMain">
 const THEME_KEY = 'finanzas_ignacio_theme';
 const THEME_LABELS = {system:'🌓 Tema: Sistema', light:'☀️ Tema: Claro', dark:'🌙 Tema: Oscuro'};
-function getTheme(){ try{ return localStorage.getItem(THEME_KEY) || 'system'; }catch(e){ return 'system'; } }
+function getTheme(){ try{ return LS.getItem(THEME_KEY) || 'system'; }catch(e){ return 'system'; } }
 function applyTheme(t){
   if(t==='system') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
@@ -640,7 +657,7 @@ function simpleHash(s){
   return h.toString(36);
 }
 const PIN_KEY = 'finanzas_ignacio_pin';
-function getPinHash(){ try{ return localStorage.getItem(PIN_KEY); }catch(e){ return null; } }
+function getPinHash(){ try{ return LS.getItem(PIN_KEY); }catch(e){ return null; } }
 (function lockGate(){
   const hash = getPinHash();
   const unlocked = sessionStorage.getItem('finanzas_unlocked')==='1';
@@ -663,26 +680,26 @@ function getPinHash(){ try{ return localStorage.getItem(PIN_KEY); }catch(e){ ret
 })();
 
 // ---- Configuración (activos, objetivo, moneda). Los usuarios antiguos se migran con sus valores de siempre ----
-const APP_VERSION = '4';
+const APP_VERSION = '5';
 const CONFIG_KEY = 'finanzas_config_v1';
 const LEGACY_META = {};
 const LEGACY_TARGETS = {};
 function loadConfig(){
   let raw = null;
-  try{ raw = localStorage.getItem(CONFIG_KEY); }catch(e){}
+  try{ raw = LS.getItem(CONFIG_KEY); }catch(e){}
   if(raw){
     try{ const c = JSON.parse(raw); c.meta = c.meta||{}; c.targets = c.targets||{}; c.currency = c.currency||'EUR'; return c; }catch(e){}
   }
   let hasOld = false;
-  try{ hasOld = localStorage.getItem('finanzas_ignacio_assetlist')!==null || localStorage.getItem('finanzas_ignacio_v1')!==null; }catch(e){}
+  try{ hasOld = LS.getItem('finanzas_ignacio_assetlist')!==null || LS.getItem('finanzas_ignacio_v1')!==null; }catch(e){}
   const cfg = hasOld
     ? {legacy:true, onboarded:true, currency:'EUR', meta:JSON.parse(JSON.stringify(LEGACY_META)), targets:{...LEGACY_TARGETS}}
     : {legacy:false, onboarded:false, currency:'EUR', meta:{}, targets:{}};
-  try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+  try{ LS.setItem(CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
   return cfg;
 }
 const CONFIG = loadConfig();
-function saveConfig(){ try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); }catch(e){} }
+function saveConfig(){ try{ LS.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); }catch(e){} }
 const CCY_SYM = {EUR:'€', USD:'$', GBP:'£'};
 const CCY_NAME = {EUR:'euros', USD:'dólares', GBP:'libras'};
 function sym(){ return CCY_SYM[CONFIG.currency] || '€'; }
@@ -696,17 +713,17 @@ const ASSETS = [];
 const ASSETS_KEY = 'finanzas_ignacio_assetlist';
 (function initAssets(){
   try{
-    const stored = localStorage.getItem(ASSETS_KEY);
+    const stored = LS.getItem(ASSETS_KEY);
     if(stored){
       const list = JSON.parse(stored);
       ASSETS.splice(0, ASSETS.length, ...list);
     } else {
       if(!CONFIG.legacy) ASSETS.splice(0, ASSETS.length);
-      localStorage.setItem(ASSETS_KEY, JSON.stringify(ASSETS));
+      LS.setItem(ASSETS_KEY, JSON.stringify(ASSETS));
     }
   }catch(e){}
 })();
-function saveAssetsList(){ try{ localStorage.setItem(ASSETS_KEY, JSON.stringify(ASSETS)); }catch(e){} }
+function saveAssetsList(){ try{ LS.setItem(ASSETS_KEY, JSON.stringify(ASSETS)); }catch(e){} }
 const CATEGORIES = {
   "Líquido": [],
   "Renta fija": [],
@@ -715,7 +732,7 @@ const CATEGORIES = {
 const CATEGORIES_KEY = 'finanzas_ignacio_categories';
 (function initCategories(){
   try{
-    const stored = localStorage.getItem(CATEGORIES_KEY);
+    const stored = LS.getItem(CATEGORIES_KEY);
     if(stored){
       const obj = JSON.parse(stored);
       Object.keys(CATEGORIES).forEach(cat=>{
@@ -723,11 +740,11 @@ const CATEGORIES_KEY = 'finanzas_ignacio_categories';
       });
     } else {
       if(!CONFIG.legacy) Object.keys(CATEGORIES).forEach(c=>CATEGORIES[c].splice(0));
-      localStorage.setItem(CATEGORIES_KEY, JSON.stringify(CATEGORIES));
+      LS.setItem(CATEGORIES_KEY, JSON.stringify(CATEGORIES));
     }
   }catch(e){}
 })();
-function saveCategories(){ try{ localStorage.setItem(CATEGORIES_KEY, JSON.stringify(CATEGORIES)); }catch(e){} }
+function saveCategories(){ try{ LS.setItem(CATEGORIES_KEY, JSON.stringify(CATEGORIES)); }catch(e){} }
 const KEY = "finanzas_ignacio_v1";
 // Histórico importado del Excel: [fecha, Personal, Estudios, BTC, QDVE, VUAA, SAB, ORO, MSCI.W, INTEL, XTB]
 const HIST_FIELDS = ["Personal","Estudios","BTC","QDVE","VUAA","SAB","ORO","MSCI.W","INTEL","XTB"];
@@ -739,19 +756,19 @@ const SEED = HIST_RAW.map(r=>{
 });
 
 function load(){
-  try{ const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : (CONFIG.legacy ? SEED.slice() : []); }
+  try{ const raw = LS.getItem(KEY); return raw ? JSON.parse(raw) : (CONFIG.legacy ? SEED.slice() : []); }
   catch(e){ return CONFIG.legacy ? SEED.slice() : []; }
 }
 function save(data){
-  try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
+  try{ LS.setItem(KEY, JSON.stringify(data)); }catch(e){}
 }
 const RATE_KEY = "finanzas_ignacio_rate";
 function getRate(){
-  try{ const r = localStorage.getItem(RATE_KEY); if(r) return Number(r); }catch(e){}
+  try{ const r = LS.getItem(RATE_KEY); if(r) return Number(r); }catch(e){}
   return CONFIG.currency==='EUR' ? 0.87 : 1;
 }
 function setRate(r){
-  try{ localStorage.setItem(RATE_KEY, String(r)); }catch(e){}
+  try{ LS.setItem(RATE_KEY, String(r)); }catch(e){}
 }
 function total(entry){
   return ASSETS.reduce((s,a)=> s + (Number(entry[a])||0), 0);
@@ -788,11 +805,11 @@ function fmt(n){
 document.getElementById('themeBtn').onclick = ()=>{
   const order = ['system','light','dark'];
   const next = order[(order.indexOf(getTheme())+1) % order.length];
-  try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+  try{ LS.setItem(THEME_KEY, next); }catch(e){}
   applyTheme(next);
 };
 
-let simpleMode = localStorage.getItem('finanzas_simplemode')==='1';
+let simpleMode = LS.getItem('finanzas_simplemode')==='1';
 const viewModeBtn = document.getElementById('viewModeBtn');
 function applyViewMode(){
   document.querySelector('.tabs').style.display = simpleMode ? 'none' : 'flex';
@@ -806,7 +823,7 @@ function applyViewMode(){
 }
 viewModeBtn.onclick = ()=>{
   simpleMode = !simpleMode;
-  localStorage.setItem('finanzas_simplemode', simpleMode?'1':'0');
+  LS.setItem('finanzas_simplemode', simpleMode?'1':'0');
   applyViewMode();
 };
 function renderSimple(){
@@ -851,7 +868,7 @@ let data = load().sort((a,b)=> a.date.localeCompare(b.date));
 let undoStack = [];
 function pushUndo(){
   let movsSnap = [];
-  try{ movsSnap = JSON.parse(localStorage.getItem(MOVS_KEY_UNDO)||'[]'); }catch(e){}
+  try{ movsSnap = JSON.parse(LS.getItem(MOVS_KEY_UNDO)||'[]'); }catch(e){}
   undoStack.push({data: JSON.parse(JSON.stringify(data)), movs: movsSnap});
   if(undoStack.length>20) undoStack.shift();
   updateUndoBtn();
@@ -865,7 +882,7 @@ document.getElementById('undoBtn').onclick = ()=>{
   const snap = undoStack.pop();
   data.splice(0, data.length, ...snap.data);
   save(data);
-  try{ localStorage.setItem(MOVS_KEY_UNDO, JSON.stringify(snap.movs)); }catch(e){}
+  try{ LS.setItem(MOVS_KEY_UNDO, JSON.stringify(snap.movs)); }catch(e){}
   updateUndoBtn();
   render();
 };
@@ -967,6 +984,8 @@ function render(){
   renderYir();
   renderBudget();
   renderSettings();
+  renderEnc();
+  updateBackupUi();
   renderRangeButtons();
   drawChart();
   checkBackupReminder();
@@ -1034,7 +1053,7 @@ const CONTRIB_MIGRATED_KEY = "finanzas_ignacio_contrib_migrated";
 function migrateContribToMovs(){}
 function getContrib(){
   let movs = [];
-  try{ movs = JSON.parse(localStorage.getItem(MOVS_KEY_EARLY)||'[]'); }catch(e){}
+  try{ movs = JSON.parse(LS.getItem(MOVS_KEY_EARLY)||'[]'); }catch(e){}
   const obj = {};
   INVEST_ASSETS.forEach(a=>{
     obj[a] = Math.round(movs.filter(m=>m.asset===a && m.amountEur>0).reduce((s,m)=>s+m.amountEur,0) * 100) / 100;
@@ -1065,7 +1084,7 @@ function setAportadoManual(asset, newValue){
   const last = data[data.length-1];
   const seedDate = (last && last.date) || new Date().toISOString().slice(0,10);
   if(Math.abs(diff) > 0.01) movs.push({date: seedDate, asset, amountEur: diff, seed:true});
-  try{ localStorage.setItem(MOVS_KEY_EARLY, JSON.stringify(movs)); }catch(e){}
+  try{ LS.setItem(MOVS_KEY_EARLY, JSON.stringify(movs)); }catch(e){}
 }
 function renderPodium(contrib, last){
   const el = document.getElementById('podium');
@@ -1140,7 +1159,7 @@ function renderAvmTable(){
 const PROJ_RATE_KEY = 'finanzas_ignacio_projrates';
 const PROJ_RATE_DEFAULTS = {};
 function getProjRates(){
-  try{ const r = localStorage.getItem(PROJ_RATE_KEY); return r ? JSON.parse(r) : {...PROJ_RATE_DEFAULTS}; }catch(e){ return {...PROJ_RATE_DEFAULTS}; }
+  try{ const r = LS.getItem(PROJ_RATE_KEY); return r ? JSON.parse(r) : {...PROJ_RATE_DEFAULTS}; }catch(e){ return {...PROJ_RATE_DEFAULTS}; }
 }
 function renderProjRateInputs(){
   const last = data[data.length-1];
@@ -1160,7 +1179,7 @@ document.getElementById('projRateSaveBtn').onclick = ()=>{
     const v = document.getElementById('rate_'+a.replace('.','_')).value;
     if(v!=='') rates[a] = Number(v);
   });
-  try{ localStorage.setItem(PROJ_RATE_KEY, JSON.stringify(rates)); }catch(e){}
+  try{ LS.setItem(PROJ_RATE_KEY, JSON.stringify(rates)); }catch(e){}
   renderFutureTable();
 };
 
@@ -1211,7 +1230,7 @@ function renderFutureTable(){
 
 const INFL_KEY = 'finanzas_ignacio_inflation';
 function getInflation(){
-  try{ const r = localStorage.getItem(INFL_KEY); return r!=null ? Number(r) : 3; }catch(e){ return 3; }
+  try{ const r = LS.getItem(INFL_KEY); return r!=null ? Number(r) : 3; }catch(e){ return 3; }
 }
 function renderInflation(){
   const last = data[data.length-1];
@@ -1241,7 +1260,7 @@ function renderInflation(){
 }
 document.getElementById('inflInput').onchange = ()=>{
   const v = Number(document.getElementById('inflInput').value);
-  if(!isNaN(v)){ try{ localStorage.setItem(INFL_KEY, String(v)); }catch(e){} }
+  if(!isNaN(v)){ try{ LS.setItem(INFL_KEY, String(v)); }catch(e){} }
   renderInflation();
 };
 
@@ -1391,7 +1410,7 @@ function renderCategories(last){
 
 const AGE_KEY = 'finanzas_ignacio_age';
 function getAge(){
-  try{ const r = localStorage.getItem(AGE_KEY); const n = Number(r); if(r && !isNaN(n) && n>0 && n<120) return n; }catch(e){}
+  try{ const r = LS.getItem(AGE_KEY); const n = Number(r); if(r && !isNaN(n) && n>0 && n<120) return n; }catch(e){}
   return 30;
 }
 function healthParams(age){
@@ -1401,9 +1420,9 @@ function healthParams(age){
 }
 const HEALTH_HIST_KEY = 'finanzas_ignacio_healthhist';
 function getHealthHist(){
-  try{ const r = localStorage.getItem(HEALTH_HIST_KEY); return r ? JSON.parse(r) : {}; }catch(e){ return {}; }
+  try{ const r = LS.getItem(HEALTH_HIST_KEY); return r ? JSON.parse(r) : {}; }catch(e){ return {}; }
 }
-function saveHealthHist(o){ try{ localStorage.setItem(HEALTH_HIST_KEY, JSON.stringify(o)); }catch(e){} }
+function saveHealthHist(o){ try{ LS.setItem(HEALTH_HIST_KEY, JSON.stringify(o)); }catch(e){} }
 function healthHistChart(hist){
   const keys = Object.keys(hist).sort();
   if(!keys.length) return '';
@@ -1539,7 +1558,7 @@ function renderHealth(){
 }
 document.getElementById('healthAge').oninput = ()=>{
   const v = Number(document.getElementById('healthAge').value);
-  if(v>0 && v<120){ try{ localStorage.setItem(AGE_KEY, String(v)); }catch(e){} renderHealth(); }
+  if(v>0 && v<120){ try{ LS.setItem(AGE_KEY, String(v)); }catch(e){} renderHealth(); }
 };
 
 let yirYear = null;
@@ -2108,12 +2127,12 @@ function setupMoveMoney(prefix, sign, defaultHint){
 }
 const MOVS_KEY = 'finanzas_ignacio_movs';
 function getMovs(){
-  try{ const r = localStorage.getItem(MOVS_KEY); return r ? JSON.parse(r) : []; }catch(e){ return []; }
+  try{ const r = LS.getItem(MOVS_KEY); return r ? JSON.parse(r) : []; }catch(e){ return []; }
 }
 function logMovement(date, asset, amountEur){
   const movs = getMovs();
   movs.push({date, asset, amountEur: Math.round(amountEur*100)/100});
-  try{ localStorage.setItem(MOVS_KEY, JSON.stringify(movs)); }catch(e){}
+  try{ LS.setItem(MOVS_KEY, JSON.stringify(movs)); }catch(e){}
 }
 setupMoveMoney('invest', 1, 'Elige en qué activo quieres meter el dinero');
 setupMoveMoney('withdraw', -1, 'Elige de qué activo quieres retirar el dinero');
@@ -2311,7 +2330,7 @@ renderPinStatus();
 document.getElementById('setPinBtn').onclick = ()=>{
   const v = document.getElementById('newPin').value.trim();
   if(v.length<4 || v.length>8){ alert('El PIN debe tener entre 4 y 8 dígitos.'); return; }
-  localStorage.setItem(PIN_KEY, simpleHash(v));
+  LS.setItem(PIN_KEY, simpleHash(v));
   sessionStorage.setItem('finanzas_unlocked','1');
   document.getElementById('newPin').value='';
   renderPinStatus();
@@ -2320,7 +2339,7 @@ document.getElementById('setPinBtn').onclick = ()=>{
 document.getElementById('removePinBtn').onclick = ()=>{
   if(!getPinHash()){ return; }
   if(confirm('¿Quitar el PIN? Cualquiera con el enlace podrá entrar directamente.')){
-    localStorage.removeItem(PIN_KEY);
+    LS.removeItem(PIN_KEY);
     renderPinStatus();
   }
 };
@@ -2330,7 +2349,7 @@ if(typeof claude !== 'undefined' && claude && claude.use){ claude.use('downloads
 
 const BACKUP_KEY = 'finanzas_ignacio_lastbackup';
 function checkBackupReminder(){
-  const last = localStorage.getItem(BACKUP_KEY);
+  const last = LS.getItem(BACKUP_KEY);
   const days = last ? (Date.now()-Number(last))/86400000 : 999;
   const due = days>=14;
   document.getElementById('backupBanner').style.display = due ? 'block' : 'none';
@@ -2361,7 +2380,7 @@ async function saveFile(filename, payload){
   setTimeout(()=>URL.revokeObjectURL(url), 3000);
   return true;
 }
-function markBackupDone(){ try{ localStorage.setItem(BACKUP_KEY, String(Date.now())); }catch(e){} checkBackupReminder(); }
+function markBackupDone(){ try{ LS.setItem(BACKUP_KEY, String(Date.now())); }catch(e){} checkBackupReminder(); }
 async function doExport(type){
   const date = new Date().toISOString().slice(0,10);
   try{
@@ -2376,7 +2395,7 @@ async function doExport(type){
 const BACKUP_APP_ID = 'mis-finanzas-backup';
 function buildFullBackup(){
   const keys = {};
-  for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); if(k && k.startsWith('finanzas')) keys[k] = localStorage.getItem(k); }
+  LS.keys().forEach(k=>{ keys[k] = LS.getItem(k); });
   // se escribe explícitamente lo que, si no, vendría de valores por defecto del código
   keys['finanzas_ignacio_v1'] = JSON.stringify(data);
   keys[CONFIG_KEY] = JSON.stringify(CONFIG);
@@ -2389,12 +2408,10 @@ function buildFullBackup(){
 }
 function restoreFullBackup(obj, reload){
   if(!obj || obj.app!==BACKUP_APP_ID || !obj.keys || typeof obj.keys!=='object') throw new Error('formato');
-  const old = [];
-  for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); if(k && k.startsWith('finanzas')) old.push(k); }
-  old.forEach(k=>localStorage.removeItem(k));
-  Object.entries(obj.keys).forEach(([k,v])=>{ if(k.startsWith('finanzas') && typeof v==='string') localStorage.setItem(k, v); });
+  LS.keys().forEach(k=>LS.removeItem(k));
+  Object.entries(obj.keys).forEach(([k,v])=>{ if(k.indexOf('finanzas')===0 && k!=='finanzas_vault_v1' && typeof v==='string') LS.setItem(k, v); });
   try{ sessionStorage.removeItem('finanzas_unlocked'); }catch(e){}
-  if(reload!==false) location.reload();
+  if(reload!==false) LS.flush().then(()=>location.reload());
 }
 function analyzeBackup(raw){
   const text = String(raw||'').replace(/^\uFEFF/,'').trim();
@@ -2402,6 +2419,7 @@ function analyzeBackup(raw){
   let obj;
   try{ obj = JSON.parse(text); }
   catch(e){ return {kind:'error', msg:`No he podido leerlo como datos de la app (he leído ${text.length} caracteres). Si lo pegaste, comprueba que copiaste TODO el texto, de la primera llave a la última. Si es un archivo, tiene que ser el que se llama «mis-finanzas-copia-completa-…».`}; }
+  if(obj && obj.app===BACKUP_APP_ID && obj.encrypted===true && obj.ct && obj.salt && obj.iv) return {kind:'encrypted', env:obj};
   if(obj && obj.app===BACKUP_APP_ID && obj.keys && typeof obj.keys==='object') return {kind:'full', obj};
   if(Array.isArray(obj) && obj.length && obj.every(r=> r && typeof r.date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)))
     return {kind:'records', records:obj, msg:'Este archivo es solo la lista de registros (lo que se descarga con «Exportar JSON»), no la copia completa: no trae tus apartados, objetivo, aportaciones ni presupuesto. Para la copia completa busca el archivo «mis-finanzas-copia-completa-…».'};
@@ -2435,15 +2453,21 @@ let pendingBackup = null;
 document.getElementById('exportFullBtn').onclick = async ()=>{
   const info = document.getElementById('restoreInfo');
   try{
-    const done = await saveFile(`mis-finanzas-copia-completa-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(buildFullBackup()));
-    if(done!==false){ markBackupDone(); info.textContent = 'Copia completa descargada. Guárdala en un sitio seguro: contiene todos tus datos.'; }
-  }catch(e){ if(!(e && e.code==='declined')) info.textContent = 'No se pudo descargar la copia.'; }
+    const p = await backupPayload();
+    const done = await saveFile(`mis-finanzas-copia-completa${p.encrypted?'-cifrada':''}-${new Date().toISOString().slice(0,10)}.json`, p.text);
+    if(done!==false){ markBackupDone(); info.textContent = p.encrypted ? 'Copia completa CIFRADA descargada. Para abrirla hará falta su contraseña: no la olvides.' : 'Copia completa descargada (sin cifrar). Guárdala en un sitio seguro: contiene todos tus datos.'; }
+  }catch(e){ if(e && e.code==='shortpass') info.textContent = e.message; else if(!(e && e.code==='declined')) info.textContent = 'No se pudo descargar la copia.'; }
 };
 function loadPendingBackup(text){
   const info = document.getElementById('restoreInfo'), btn = document.getElementById('restoreFullBtn');
-  pendingBackup = null; btn.style.display = 'none';
+  pendingBackup = null; pendingEnv = null; btn.style.display = 'none';
+  const decBox = document.getElementById('restoreDecrypt'); if(decBox) decBox.style.display = 'none';
   const r = analyzeBackup(text);
-  if(r.kind==='full'){
+  if(r.kind==='encrypted'){
+    pendingEnv = r.env;
+    info.textContent = 'Esta copia está cifrada. Escribe su contraseña y pulsa «Descifrar».';
+    if(decBox) decBox.style.display = 'block';
+  } else if(r.kind==='full'){
     pendingBackup = r.obj;
     const recs = (()=>{ try{ return JSON.parse(r.obj.keys['finanzas_ignacio_v1']||'[]').length; }catch(e){ return 0; } })();
     info.textContent = `Copia del ${String(r.obj.created||'').slice(0,10)} con ${recs} registros. Si la restauras, REEMPLAZA todo lo que hay ahora en esta app.`;
@@ -2462,11 +2486,12 @@ document.getElementById('restoreFile').onchange = ev=>{
 document.getElementById('restorePasteBtn').onclick = ()=> loadPendingBackup(document.getElementById('restorePaste').value.trim());
 document.getElementById('exportTextBtn').onclick = async ()=>{
   const info = document.getElementById('restoreInfo'), box = document.getElementById('backupText');
-  const txt = JSON.stringify(buildFullBackup());
+  let pay; try{ pay = await backupPayload(); }catch(e){ info.textContent = (e && e.code==='shortpass') ? e.message : 'No se pudo preparar la copia.'; return; }
+  const txt = pay.text;
   try{
     await navigator.clipboard.writeText(txt);
     box.style.display = 'none'; markBackupDone();
-    info.textContent = 'Copiado. Ahora pégalo donde lo necesites (por ejemplo en un mensaje a ti mismo, o en la app instalada).';
+    info.textContent = (pay.encrypted ? 'Copiado (cifrado). ' : 'Copiado. ') + 'Ahora pégalo donde lo necesites (por ejemplo en un mensaje a ti mismo, o en la app instalada).';
   }catch(e){
     box.value = txt; box.style.display = 'block'; box.select();
     info.textContent = 'No he podido copiarlo solo. Mantén pulsado sobre el cuadro, elige «Seleccionar todo» y «Copiar».';
@@ -2521,13 +2546,13 @@ document.getElementById('importFile').onchange = (ev)=>{
 
 const FIXED_KEY = 'finanzas_ignacio_fixed';
 function getFixed(){
-  try{ const r = localStorage.getItem(FIXED_KEY); return r ? JSON.parse(r) : {income:[], expenses:[]}; }
+  try{ const r = LS.getItem(FIXED_KEY); return r ? JSON.parse(r) : {income:[], expenses:[]}; }
   catch(e){ return {income:[], expenses:[]}; }
 }
-function saveFixed(f){ try{ localStorage.setItem(FIXED_KEY, JSON.stringify(f)); }catch(e){} }
+function saveFixed(f){ try{ LS.setItem(FIXED_KEY, JSON.stringify(f)); }catch(e){} }
 const ONEOFF_KEY = 'finanzas_ignacio_oneoff';
-function getOneoff(){ try{ const r = localStorage.getItem(ONEOFF_KEY); return r ? JSON.parse(r) : []; }catch(e){ return []; } }
-function saveOneoff(o){ try{ localStorage.setItem(ONEOFF_KEY, JSON.stringify(o)); }catch(e){} }
+function getOneoff(){ try{ const r = LS.getItem(ONEOFF_KEY); return r ? JSON.parse(r) : []; }catch(e){ return []; } }
+function saveOneoff(o){ try{ LS.setItem(ONEOFF_KEY, JSON.stringify(o)); }catch(e){} }
 
 function renderFixedTable(kind){
   const f = getFixed();
@@ -2632,7 +2657,7 @@ document.getElementById('calNext').onclick = ()=>{ calDate.setMonth(calDate.getM
 
 const FIRE_KEY = 'finanzas_ignacio_fire';
 function getFire(){
-  try{ const r = localStorage.getItem(FIRE_KEY); if(r) return {swr:4, ret:7, ...JSON.parse(r)}; }catch(e){}
+  try{ const r = LS.getItem(FIRE_KEY); if(r) return {swr:4, ret:7, ...JSON.parse(r)}; }catch(e){}
   return {swr:4, ret:7};
 }
 function renderFire(){
@@ -2681,7 +2706,7 @@ function renderFire(){
   document.getElementById(id).oninput = ()=>{
     const swr = Number(document.getElementById('fireSwr').value);
     const ret = Number(document.getElementById('fireRet').value);
-    try{ localStorage.setItem(FIRE_KEY, JSON.stringify({swr: isNaN(swr)?4:swr, ret: isNaN(ret)?7:ret})); }catch(e){}
+    try{ LS.setItem(FIRE_KEY, JSON.stringify({swr: isNaN(swr)?4:swr, ret: isNaN(ret)?7:ret})); }catch(e){}
     renderFire();
   };
 });
@@ -2743,7 +2768,7 @@ document.getElementById('clearBtn').onclick = ()=>{
 const COLLAPSE_KEY = 'finanzas_ignacio_collapsed';
 function setupCollapsibleCards(){
   let saved = [];
-  try{ saved = JSON.parse(localStorage.getItem(COLLAPSE_KEY)||'[]'); }catch(e){}
+  try{ saved = JSON.parse(LS.getItem(COLLAPSE_KEY)||'[]'); }catch(e){}
   document.querySelectorAll('.card').forEach(card=>{
     const h = card.querySelector(':scope > h2');
     if(!h) return;
@@ -2757,9 +2782,9 @@ function setupCollapsibleCards(){
       const c = !card.classList.contains('collapsed');
       apply(c);
       try{
-        let s = JSON.parse(localStorage.getItem(COLLAPSE_KEY)||'[]').filter(k=>k!==key);
+        let s = JSON.parse(LS.getItem(COLLAPSE_KEY)||'[]').filter(k=>k!==key);
         if(c) s.push(key);
-        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(s));
+        LS.setItem(COLLAPSE_KEY, JSON.stringify(s));
       }catch(e){}
     };
     h.addEventListener('click', toggle);
@@ -2798,9 +2823,7 @@ async function forceUpdate(){
 }
 function resetAllData(){
   try{
-    const ks = [];
-    for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); if(k && k.startsWith('finanzas')) ks.push(k); }
-    ks.forEach(k=>localStorage.removeItem(k));
+    Vault.wipeAll();
     sessionStorage.removeItem('finanzas_unlocked');
   }catch(e){}
   location.reload();
@@ -2930,9 +2953,9 @@ function loadDemoData(){
   movs.unshift({date:recs[0].date, asset:N.fund, amountEur:3000, seed:true}, {date:recs[0].date, asset:N.btc, amountEur:400, seed:true}, {date:recs[0].date, asset:N.gold, amountEur:300, seed:true});
   data.splice(0, data.length, ...recs); save(data);
   try{
-    localStorage.setItem('finanzas_ignacio_movs', JSON.stringify(movs));
-    localStorage.setItem('finanzas_ignacio_fixed', JSON.stringify({income:[{name:'Sueldo',amount:900}], expenses:[{name:'Alquiler',amount:350},{name:'Transporte',amount:60},{name:'Móvil',amount:15}]}));
-    localStorage.removeItem('finanzas_ignacio_healthhist');
+    LS.setItem('finanzas_ignacio_movs', JSON.stringify(movs));
+    LS.setItem('finanzas_ignacio_fixed', JSON.stringify({income:[{name:'Sueldo',amount:900}], expenses:[{name:'Alquiler',amount:350},{name:'Transporte',amount:60},{name:'Móvil',amount:15}]}));
+    LS.removeItem('finanzas_ignacio_healthhist');
   }catch(e){}
 }
 
@@ -3147,6 +3170,15 @@ function wizHandleBackupText(text){
   err.textContent = ''; act.innerHTML = '';
   const r = analyzeBackup(text);
   if(r.kind==='full'){ restoreFullBackup(r.obj); return; }
+  if(r.kind==='encrypted'){
+    err.textContent = 'Esta copia está cifrada. Escribe su contraseña:';
+    act.innerHTML = `<input type="password" id="wzPass" placeholder="Contraseña de la copia" autocomplete="current-password" style="margin-top:8px"><button type="button" id="wzDecBtn" style="width:100%;margin-top:8px">Descifrar y restaurar</button>`;
+    document.getElementById('wzDecBtn').onclick = async ()=>{
+      try{ err.textContent = 'Descifrando… puede tardar unos segundos.'; restoreFullBackup(await Vault.decryptBackup(r.env, document.getElementById('wzPass').value)); }
+      catch(e){ err.textContent = (e && e.code==='badpass') ? 'Contraseña incorrecta.' : 'No se pudo descifrar la copia.'; }
+    };
+    return;
+  }
   err.textContent = r.msg;
   if(r.kind==='records'){
     act.innerHTML = `<button type="button" id="wzRecBtn" style="width:100%;margin-top:8px">Importar solo los registros (${r.records.length})</button>`;
@@ -3168,7 +3200,7 @@ function wizFinish(){
   Object.keys(W.targets).forEach(k=>{ if(CONFIG.meta[k] && CONFIG.meta[k].invest && W.targets[k]>0) CONFIG.targets[k] = W.targets[k]; });
   CONFIG.onboarded = true; CONFIG.demo = false; saveConfig();
   const age = Number(W.age);
-  if(age>=14 && age<120){ try{ localStorage.setItem(AGE_KEY, String(age)); }catch(e){} }
+  if(age>=14 && age<120){ try{ LS.setItem(AGE_KEY, String(age)); }catch(e){} }
   const rate = Number(W.rate) || getRate();
   if(Number(W.rate)) setRate(Number(W.rate));
   const today = new Date().toISOString().slice(0,10), rec = {date:today}; let any = false;
@@ -3184,12 +3216,314 @@ function wizFinish(){
   render();
 }
 
+// =====================  CIFRADO DE DATOS Y COPIAS  =====================
+let encState = '', pendingEnv = null;
+const byId = id => document.getElementById(id);
+function updateBackupUi(){
+  const on = Vault.enabled();
+  const row = byId('backupPassRow'), note = byId('backupEncNote');
+  if(row) row.style.display = on ? 'none' : '';
+  if(note) note.style.display = on ? 'block' : 'none';
+}
+function renderEnc(force){
+  const box = byId('encBody'); if(!box) return;
+  const st = !Vault.supported() ? 'nosupport' : (Vault.enabled() ? 'on' : 'off');
+  if(st===encState && !force) return;
+  encState = st;
+  const limits = '<div class="hint" style="margin-top:10px">Qué protege: lo guardado en este dispositivo mientras la app está cerrada o bloqueada. Qué no: alguien que use la app con ella abierta, un virus en el dispositivo, ni los archivos de copia que descargues sin contraseña. Sin la contraseña no hay forma de recuperar los datos (solo con una copia de seguridad).</div>';
+  if(st==='nosupport'){ box.innerHTML = '<div class="hint">Este navegador no permite el cifrado. Prueba con uno más reciente (Chrome, Safari o Edge actualizados).</div>'; return; }
+  if(st==='off'){
+    box.innerHTML = `<div class="hint" style="color:var(--text)">Ahora tus datos se guardan en este dispositivo <b>sin cifrar</b>: el PIN solo tapa la pantalla. Con el cifrado, lo guardado queda ilegible sin tu contraseña (AES-256) y las copias de seguridad también salen cifradas.</div>
+      <div class="hint" style="color:#fbbf24;margin:8px 0">Antes de activarlo, descarga una copia completa (Histórico → Copia de seguridad), por si acaso.</div>
+      <div class="wz-row"><label>Contraseña (mínimo 8 caracteres; mejor una frase larga)</label><input type="password" id="encPass1" autocomplete="new-password"></div>
+      <div class="wz-row"><label>Repite la contraseña</label><input type="password" id="encPass2" autocomplete="new-password"></div>
+      <label class="wz-check"><input type="checkbox" id="encAck"> <span>Entiendo que si olvido la contraseña <b>no se pueden recuperar los datos</b></span></label>
+      <div id="encMsg" class="wz-err"></div>
+      <button type="button" id="encEnableBtn" style="width:100%">🔐 Activar cifrado</button>${limits}`;
+  } else {
+    box.innerHTML = `<div class="hint" style="color:var(--text)">✅ <b>Cifrado activado.</b> Tus datos guardados están cifrados. Al abrir la app te pedirá la contraseña, y se bloquea sola si la dejas más de 5 minutos fuera. Con esto ya no necesitas el PIN.</div>
+      <button type="button" class="secondary" id="encLockBtn" style="width:100%">🔒 Bloquear ahora</button>
+      <details class="pastebox"><summary>Cambiar la contraseña</summary>
+        <div class="wz-row"><label>Contraseña actual</label><input type="password" id="encOld" autocomplete="current-password"></div>
+        <div class="wz-row"><label>Nueva contraseña</label><input type="password" id="encNew1" autocomplete="new-password"></div>
+        <div class="wz-row"><label>Repite la nueva</label><input type="password" id="encNew2" autocomplete="new-password"></div>
+        <button type="button" class="secondary" id="encChangeBtn" style="width:100%">Cambiar contraseña</button></details>
+      <details class="pastebox"><summary>Desactivar el cifrado</summary>
+        <div class="wz-row"><label>Contraseña actual</label><input type="password" id="encOff" autocomplete="current-password"></div>
+        <button type="button" class="secondary" id="encDisableBtn" style="width:100%">Desactivar y volver a guardar sin cifrar</button></details>
+      <div id="encMsg" class="wz-err"></div>${limits}`;
+  }
+}
+byId('encBody').addEventListener('click', async e=>{
+  const id = e.target.id; if(!id || id.indexOf('enc')!==0) return;
+  const say = (t, isBad)=>{ const m = byId('encMsg'); if(m){ m.textContent = t; m.style.color = isBad ? 'var(--neg)' : 'var(--muted)'; } };
+  const btn = e.target;
+  if(id==='encLockBtn'){ Vault.lockNow(); return; }
+  if(id==='encEnableBtn'){
+    const p1 = byId('encPass1').value, p2 = byId('encPass2').value;
+    if(p1.length<8){ say('La contraseña debe tener al menos 8 caracteres.', true); return; }
+    if(p1!==p2){ say('Las dos contraseñas no coinciden.', true); return; }
+    if(!byId('encAck').checked){ say('Marca la casilla para confirmar que lo entiendes.', true); return; }
+    btn.disabled = true; say('Cifrando… puede tardar unos segundos.');
+    try{
+      await Vault.enable(p1, buildFullBackup().keys);
+      renderEnc(true); updateBackupUi();
+      say('Cifrado activado.' + (p1.length<12 ? ' Consejo: una frase de 12 o más caracteres es mucho más segura.' : ''));
+      byId('encMsg').style.color = 'var(--pos)';
+    }catch(err){ say('No se pudo activar el cifrado: ' + (err && err.message || err), true); btn.disabled = false; }
+    return;
+  }
+  if(id==='encChangeBtn'){
+    const o = byId('encOld').value, n1 = byId('encNew1').value, n2 = byId('encNew2').value;
+    if(!o){ say('Escribe tu contraseña actual.', true); return; }
+    if(n1.length<8){ say('La nueva contraseña debe tener al menos 8 caracteres.', true); return; }
+    if(n1!==n2){ say('Las dos contraseñas nuevas no coinciden.', true); return; }
+    btn.disabled = true; say('Cambiando… puede tardar unos segundos.');
+    try{
+      await Vault.changePassword(o, n1);
+      byId('encOld').value = byId('encNew1').value = byId('encNew2').value = '';
+      say('Contraseña cambiada. Las copias que hiciste antes siguen pidiendo la contraseña anterior.'); byId('encMsg').style.color = 'var(--pos)';
+    }catch(err){ say(err && err.message || 'No se pudo cambiar la contraseña.', true); }
+    btn.disabled = false; return;
+  }
+  if(id==='encDisableBtn'){
+    const p = byId('encOff').value;
+    if(!p){ say('Escribe tu contraseña actual.', true); return; }
+    btn.disabled = true; say('Descifrando… puede tardar unos segundos.');
+    try{
+      await Vault.disable(p);
+      renderEnc(true); updateBackupUi();
+      say('Cifrado desactivado: tus datos vuelven a guardarse sin cifrar.');
+    }catch(err){ say(err && err.message || 'No se pudo desactivar.', true); btn.disabled = false; }
+    return;
+  }
+});
+
+// copias de seguridad: cifradas con tu contraseña si el cifrado está activo, o con la que escribas en la copia
+async function backupPayload(){
+  const obj = buildFullBackup();
+  if(Vault.enabled()) return {text: JSON.stringify(await Vault.encryptBackup(obj)), encrypted: true};
+  const pw = (byId('backupPass') || {}).value || '';
+  if(pw){
+    if(pw.length<8){ const e = new Error('La contraseña de la copia debe tener al menos 8 caracteres.'); e.code = 'shortpass'; throw e; }
+    return {text: JSON.stringify(await Vault.encryptBackup(obj, pw)), encrypted: true};
+  }
+  return {text: JSON.stringify(obj), encrypted: false};
+}
+byId('restoreDecryptBtn').onclick = async ()=>{
+  const info = byId('restoreInfo');
+  try{
+    info.textContent = 'Descifrando… puede tardar unos segundos.';
+    const obj = await Vault.decryptBackup(pendingEnv, byId('restorePass').value);
+    byId('restorePass').value = ''; byId('restoreDecrypt').style.display = 'none';
+    loadPendingBackup(JSON.stringify(obj));
+  }catch(e){ info.textContent = (e && e.code==='badpass') ? 'Contraseña incorrecta.' : 'No se pudo descifrar la copia.'; }
+};
+// se bloquea sola tras 5 minutos fuera de la app, y se guarda todo al salir
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ hiddenAt = Date.now(); LS.flush(); }
+  else if(hiddenAt && Vault.enabled() && Date.now()-hiddenAt > 5*60*1000){ Vault.lockNow(); }
+});
+window.addEventListener('pagehide', ()=>{ LS.flush(); });
+
 migrateContribToMovs();
 applyViewMode();
 render();
 window.addEventListener('resize', ()=>drawChart());
 if(!CONFIG.onboarded) openWizard();
 </script>
+<script>
+/* ===== Arranque: almacenamiento y cifrado =====
+   Sin cifrado, todo funciona como siempre (los datos van al almacenamiento del navegador tal cual).
+   Con cifrado, lo guardado es UN solo bloque AES-256-GCM cuya clave sale de tu contraseña (PBKDF2-SHA256,
+   600.000 vueltas). La app no arranca hasta descifrarlo; mientras está abierta, los datos viven solo en memoria. */
+(function(){
+  const REAL = window.localStorage;
+  const VAULT_KEY = 'finanzas_vault_v1';
+  const PLAIN = ['finanzas_ignacio_theme','finanzas_ignacio_simplemode','finanzas_ignacio_collapsed','finanzas_ignacio_lastbackup'];
+  const ITER = 600000;
+  const subtle = (window.crypto && window.crypto.subtle) || null;
+  const te = typeof TextEncoder!=='undefined' ? new TextEncoder() : null;
+  const td = typeof TextDecoder!=='undefined' ? new TextDecoder() : null;
+  const isApp = k => typeof k==='string' && k.indexOf('finanzas')===0 && k!==VAULT_KEY;
+  const isVaulted = k => isApp(k) && PLAIN.indexOf(k)<0;
+  const toB64 = u8 => { let s=''; for(let i=0;i<u8.length;i+=0x8000) s += String.fromCharCode.apply(null, u8.subarray(i,i+0x8000)); return btoa(s); };
+  const fromB64 = s => { const bin = atob(s), u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i); return u; };
+  const rand = n => { const u = new Uint8Array(n); window.crypto.getRandomValues(u); return u; };
+  const supported = () => !!(subtle && te && td);
+
+  let mode = 'plain', mem = new Map(), vaultKey = null, vaultMeta = null, timer = null, chain = Promise.resolve();
+  let vaultRaw = null;
+  try{ vaultRaw = REAL.getItem(VAULT_KEY); }catch(e){}
+  if(vaultRaw) mode = 'locked';
+
+  async function deriveKey(password, saltU8, iter){
+    if(!(iter>=100000 && iter<=5000000)) throw new Error('parámetros de cifrado no válidos');
+    const base = await subtle.importKey('raw', te.encode(password), 'PBKDF2', false, ['deriveKey']);
+    return subtle.deriveKey({name:'PBKDF2', salt:saltU8, iterations:iter, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+  }
+  async function encJson(obj, key, meta, purpose){
+    const iv = rand(12);
+    const ct = new Uint8Array(await subtle.encrypt({name:'AES-GCM', iv, additionalData: te.encode(purpose)}, key, te.encode(JSON.stringify(obj))));
+    return Object.assign({}, meta, {iv: toB64(iv), ct: toB64(ct)});
+  }
+  async function decJson(env, key, purpose){
+    const pt = await subtle.decrypt({name:'AES-GCM', iv: fromB64(env.iv), additionalData: te.encode(purpose)}, key, fromB64(env.ct));
+    return JSON.parse(td.decode(pt));
+  }
+  const vaultMetaFor = salt => ({app:'mis-finanzas-vault', v:2, encrypted:true, kdf:'PBKDF2-SHA256', iter:ITER, salt:toB64(salt)});
+
+  function warnPersist(){
+    if(document.getElementById('persistWarn') || !document.body) return;
+    const t = document.createElement('div'); t.id = 'persistWarn';
+    t.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:2000;background:#7f1d1d;color:#fff;padding:10px 12px;border-radius:10px;font-size:.85rem';
+    t.textContent = '⚠️ No se han podido guardar los últimos cambios (¿sin espacio en el navegador?). Descarga una copia de seguridad ahora.';
+    document.body.appendChild(t);
+  }
+  function persistNow(){
+    if(mode!=='enc') return Promise.resolve();
+    const snap = {}; mem.forEach((v,k)=>{ snap[k] = v; });
+    return encJson(snap, vaultKey, vaultMeta, 'vault').then(env=>{ REAL.setItem(VAULT_KEY, JSON.stringify(env)); });
+  }
+  function schedule(){
+    if(mode!=='enc') return;
+    clearTimeout(timer);
+    timer = setTimeout(()=>{ timer = null; chain = chain.then(persistNow).catch(warnPersist); }, 120);
+  }
+  function flush(){
+    if(mode!=='enc') return Promise.resolve();
+    if(timer){ clearTimeout(timer); timer = null; chain = chain.then(persistNow).catch(warnPersist); }
+    return chain;
+  }
+
+  const LS = {
+    getItem(k){ if(mode==='enc' && isVaulted(k)) return mem.has(k) ? mem.get(k) : null; return REAL.getItem(k); },
+    setItem(k,v){ if(mode==='enc' && isVaulted(k)){ mem.set(k, String(v)); schedule(); } else REAL.setItem(k, v); },
+    removeItem(k){ if(mode==='enc' && isVaulted(k)){ mem.delete(k); schedule(); } else REAL.removeItem(k); },
+    keys(){
+      const out = [];
+      if(mode==='enc'){ mem.forEach((v,k)=>out.push(k)); PLAIN.forEach(k=>{ if(REAL.getItem(k)!==null) out.push(k); }); return out; }
+      for(let i=0;i<REAL.length;i++){ const k = REAL.key(i); if(isApp(k)) out.push(k); }
+      return out;
+    },
+    flush(){ return flush(); },
+  };
+
+  async function verifyPassword(password){
+    try{
+      const env = JSON.parse(REAL.getItem(VAULT_KEY));
+      const key = await deriveKey(password, fromB64(env.salt), env.iter);
+      await decJson(env, key, 'vault');
+      return true;
+    }catch(e){ return false; }
+  }
+  const bad = (msg, code) => { const e = new Error(msg); e.code = code; return e; };
+
+  const Vault = {
+    supported, enabled: ()=> mode==='enc', flush,
+    async enable(password, snapshot){
+      if(!supported()) throw bad('Este navegador no permite el cifrado.', 'nosupport');
+      if(mode!=='plain') throw bad('El cifrado ya está activado.', 'state');
+      const snap = {}; Object.keys(snapshot).forEach(k=>{ if(isVaulted(k)) snap[k] = snapshot[k]; });
+      const salt = rand(16), meta = vaultMetaFor(salt);
+      const key = await deriveKey(password, salt, ITER);
+      const env = await encJson(snap, key, meta, 'vault');
+      REAL.setItem(VAULT_KEY, JSON.stringify(env));
+      // se comprueba que lo guardado se descifra y coincide ANTES de borrar nada en claro
+      const stored = JSON.parse(REAL.getItem(VAULT_KEY));
+      const check = await decJson(stored, key, 'vault');
+      if(JSON.stringify(check)!==JSON.stringify(snap)){ REAL.removeItem(VAULT_KEY); throw bad('La comprobación del cifrado ha fallado; no se ha cambiado nada.', 'verify'); }
+      mem = new Map(Object.keys(snap).map(k=>[k, snap[k]]));
+      for(let i=REAL.length-1;i>=0;i--){ const k = REAL.key(i); if(isVaulted(k)) REAL.removeItem(k); }
+      vaultKey = key; vaultMeta = meta; mode = 'enc';
+    },
+    async disable(password){
+      if(mode!=='enc') throw bad('El cifrado no está activado.', 'state');
+      if(!(await verifyPassword(password))) throw bad('Contraseña incorrecta.', 'badpass');
+      await flush();
+      mem.forEach((v,k)=>{ REAL.setItem(k, v); });
+      REAL.removeItem(VAULT_KEY);
+      mem = new Map(); vaultKey = null; vaultMeta = null; mode = 'plain';
+    },
+    async changePassword(oldPass, newPass){
+      if(mode!=='enc') throw bad('El cifrado no está activado.', 'state');
+      if(!(await verifyPassword(oldPass))) throw bad('La contraseña actual no es correcta.', 'badpass');
+      await flush();
+      const salt = rand(16), meta = vaultMetaFor(salt), key = await deriveKey(newPass, salt, ITER);
+      const snap = {}; mem.forEach((v,k)=>{ snap[k] = v; });
+      const env = await encJson(snap, key, meta, 'vault');
+      const check = await decJson(env, key, 'vault');
+      if(JSON.stringify(check)!==JSON.stringify(snap)) throw bad('La comprobación ha fallado; no se ha cambiado la contraseña.', 'verify');
+      REAL.setItem(VAULT_KEY, JSON.stringify(env));
+      vaultKey = key; vaultMeta = meta;
+    },
+    async encryptBackup(obj, password){
+      let key, meta;
+      if(password){
+        const salt = rand(16); key = await deriveKey(password, salt, ITER);
+        meta = {app:'mis-finanzas-backup', version:2, encrypted:true, kdf:'PBKDF2-SHA256', iter:ITER, salt:toB64(salt)};
+      } else if(mode==='enc'){
+        key = vaultKey; meta = {app:'mis-finanzas-backup', version:2, encrypted:true, kdf:vaultMeta.kdf, iter:vaultMeta.iter, salt:vaultMeta.salt};
+      } else throw bad('Falta la contraseña.', 'nopass');
+      return encJson(obj, key, meta, 'backup');
+    },
+    async decryptBackup(env, password){
+      if(!supported()) throw bad('Este navegador no permite descifrar.', 'nosupport');
+      let key;
+      try{ key = await deriveKey(password, fromB64(env.salt), env.iter); }catch(e){ throw bad('La copia tiene un formato de cifrado no válido.', 'format'); }
+      try{ return await decJson(env, key, 'backup'); }catch(e){ throw bad('Contraseña incorrecta.', 'badpass'); }
+    },
+    async lockNow(){ await flush(); location.reload(); },
+    wipeAll(){
+      const ks = []; for(let i=0;i<REAL.length;i++){ const k = REAL.key(i); if(k && k.indexOf('finanzas')===0) ks.push(k); }
+      ks.forEach(k=>REAL.removeItem(k));
+      mem = new Map(); vaultKey = null; vaultMeta = null; mode = 'plain';
+    },
+  };
+  window.LS = LS; window.Vault = Vault;
+
+  function startMain(){
+    const s = document.createElement('script');
+    s.textContent = document.getElementById('appMain').textContent;
+    document.body.appendChild(s);
+  }
+  function showUnlock(){
+    const box = document.getElementById('vaultLock'), inp = document.getElementById('vaultPass'), btn = document.getElementById('vaultUnlockBtn');
+    const err = document.getElementById('vaultErr'), forgot = document.getElementById('vaultForgotBtn');
+    box.style.display = 'flex';
+    const go = async ()=>{
+      err.textContent = ''; btn.disabled = true; btn.textContent = 'Descifrando…';
+      try{
+        if(!supported()) throw bad('Este navegador no permite descifrar tus datos.', 'nosupport');
+        let env; try{ env = JSON.parse(vaultRaw); }catch(e){ throw bad('Los datos cifrados están dañados.', 'corrupt'); }
+        const key = await deriveKey(inp.value, fromB64(env.salt), env.iter);
+        const data = await decJson(env, key, 'vault');
+        mem = new Map(Object.keys(data).map(k=>[k, data[k]]));
+        vaultKey = key; vaultMeta = {app:env.app, v:env.v, encrypted:true, kdf:env.kdf, iter:env.iter, salt:env.salt};
+        mode = 'enc';
+        for(let i=REAL.length-1;i>=0;i--){ const k = REAL.key(i); if(isVaulted(k)) REAL.removeItem(k); }   // restos en claro de operaciones interrumpidas
+        box.style.display = 'none'; inp.value = '';
+        startMain();
+      }catch(e){
+        err.textContent = (e && (e.code==='nosupport' || e.code==='corrupt')) ? e.message : 'Contraseña incorrecta.';
+        const lb = box.querySelector('.lockbox'); lb.classList.remove('shake'); void lb.offsetWidth; lb.classList.add('shake');
+        inp.value = ''; btn.disabled = false; btn.textContent = 'Desbloquear'; inp.focus();
+      }
+    };
+    btn.onclick = go;
+    inp.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+    let armed = false;
+    forgot.onclick = ()=>{
+      if(!armed){ armed = true; forgot.textContent = 'Esto BORRA todos los datos de este dispositivo. Pulsa otra vez para confirmar'; setTimeout(()=>{ armed = false; forgot.textContent = 'He olvidado la contraseña'; }, 6000); return; }
+      Vault.wipeAll(); try{ sessionStorage.removeItem('finanzas_unlocked'); }catch(e){} location.reload();
+    };
+    setTimeout(()=>{ try{ inp.focus(); }catch(e){} }, 50);
+  }
+  if(mode==='locked') showUnlock(); else startMain();
+})();
+</script>
+
 <script>
 if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
