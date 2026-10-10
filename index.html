@@ -93,6 +93,9 @@ h1{font-size:1.4rem;margin:26px 0 6px}
 .wz-dot.on{background:var(--accent);width:22px;border-radius:99px}
 .wz-title{font-size:1.25rem;text-transform:none;letter-spacing:0;color:var(--text);margin:0 0 10px}
 .wz-p{font-size:.9rem;color:var(--muted);line-height:1.45;margin:0 0 10px}
+.pastebox{margin-top:10px;font-size:.82rem;color:var(--muted)}
+.pastebox summary{cursor:pointer;padding:4px 0}
+textarea{width:100%;background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:.78rem;font-family:inherit;margin:6px 0}
 .tplrow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .tplrow button{margin-top:0;padding:7px 10px;font-size:.8rem}
 .wz-tpl.on{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 18%,transparent)}
@@ -596,15 +599,20 @@ tbody tr:hover{background:var(--card2)}
       <button id="exportCsvBtn">Exportar CSV</button>
       <div style="margin-top:10px">
         <label>Importar archivo (JSON o CSV)</label>
-        <input type="file" id="importFile" accept=".json,.csv">
+        <input type="file" id="importFile">
       </div>
       <div class="sectiondiv"></div>
       <div class="hint"><b>Copia completa</b>: guarda TODO (registros, movimientos, ajustes, presupuesto, PIN…). Úsala para cambiar de móvil o de navegador, o para pasar a la versión instalable.</div>
       <button type="button" id="exportFullBtn" style="width:100%">⬇️ Descargar copia completa</button>
+      <button type="button" class="secondary" id="exportTextBtn" style="width:100%">📋 Copiar la copia como texto</button>
+      <textarea id="backupText" readonly rows="4" style="display:none;margin-top:8px" placeholder=""></textarea>
       <div style="margin-top:10px">
         <label>Restaurar copia completa</label>
-        <input type="file" id="restoreFile" accept=".json">
+        <input type="file" id="restoreFile">
       </div>
+      <details class="pastebox"><summary>¿No te deja elegir el archivo? Pega aquí su contenido</summary>
+        <textarea id="restorePaste" rows="4" placeholder="Pega aquí el texto de la copia completa"></textarea>
+        <button type="button" class="secondary" id="restorePasteBtn" style="width:100%">Cargar el texto</button></details>
       <div class="hint" id="restoreInfo" style="margin-top:6px"></div>
       <button type="button" class="secondary" id="restoreFullBtn" style="display:none;width:100%">Restaurar y reemplazar todo</button>
     </div>
@@ -2392,23 +2400,37 @@ document.getElementById('exportFullBtn').onclick = async ()=>{
     if(done!==false){ markBackupDone(); info.textContent = 'Copia completa descargada. Guárdala en un sitio seguro: contiene todos tus datos.'; }
   }catch(e){ if(!(e && e.code==='declined')) info.textContent = 'No se pudo descargar la copia.'; }
 };
-document.getElementById('restoreFile').onchange = ev=>{
-  const f = ev.target.files[0], info = document.getElementById('restoreInfo'), btn = document.getElementById('restoreFullBtn');
+function loadPendingBackup(text){
+  const info = document.getElementById('restoreInfo'), btn = document.getElementById('restoreFullBtn');
   pendingBackup = null; btn.style.display = 'none';
+  try{
+    const obj = JSON.parse(text);
+    if(!obj || obj.app!==BACKUP_APP_ID || !obj.keys) throw new Error('formato');
+    pendingBackup = obj;
+    const recs = (()=>{ try{ return JSON.parse(obj.keys['finanzas_ignacio_v1']||'[]').length; }catch(e){ return 0; } })();
+    info.textContent = `Copia del ${String(obj.created||'').slice(0,10)} con ${recs} registros. Si la restauras, REEMPLAZA todo lo que hay ahora en esta app.`;
+    btn.style.display = 'block';
+  }catch(e){ info.textContent = 'Eso no es una copia completa de esta app.'; }
+}
+document.getElementById('restoreFile').onchange = ev=>{
+  const f = ev.target.files[0];
   if(!f) return;
   const r = new FileReader();
-  r.onload = ()=>{
-    try{
-      const obj = JSON.parse(r.result);
-      if(!obj || obj.app!==BACKUP_APP_ID || !obj.keys) throw new Error('formato');
-      pendingBackup = obj;
-      const recs = (()=>{ try{ return JSON.parse(obj.keys['finanzas_ignacio_v1']||'[]').length; }catch(e){ return 0; } })();
-      info.textContent = `Copia del ${String(obj.created||'').slice(0,10)} con ${recs} registros. Si la restauras, REEMPLAZA todo lo que hay ahora en esta app.`;
-      btn.style.display = 'block';
-    }catch(e){ info.textContent = 'Ese archivo no es una copia completa de esta app.'; }
-    ev.target.value = '';
-  };
+  r.onload = ()=>{ loadPendingBackup(r.result); ev.target.value = ''; };
   r.readAsText(f);
+};
+document.getElementById('restorePasteBtn').onclick = ()=> loadPendingBackup(document.getElementById('restorePaste').value.trim());
+document.getElementById('exportTextBtn').onclick = async ()=>{
+  const info = document.getElementById('restoreInfo'), box = document.getElementById('backupText');
+  const txt = JSON.stringify(buildFullBackup());
+  try{
+    await navigator.clipboard.writeText(txt);
+    box.style.display = 'none'; markBackupDone();
+    info.textContent = 'Copiado. Ahora pégalo donde lo necesites (por ejemplo en un mensaje a ti mismo, o en la app instalada).';
+  }catch(e){
+    box.value = txt; box.style.display = 'block'; box.select();
+    info.textContent = 'No he podido copiarlo solo. Mantén pulsado sobre el cuadro, elige «Seleccionar todo» y «Copiar».';
+  }
 };
 document.getElementById('restoreFullBtn').onclick = e=> confirmTwice(e.target, 'Esto reemplaza todo. ¿Seguro? Pulsa otra vez', ()=>{ if(pendingBackup) restoreFullBackup(pendingBackup); });
 document.getElementById('exportJsonBtn').onclick = ()=>doExport('json');
@@ -2945,7 +2967,7 @@ function renderWizard(){
     html = wizShell('👋 Bienvenido a Mis Finanzas',
       `<p class="wz-p">Aquí llevas el seguimiento de tu dinero y tus inversiones: cuánto tienes, cuánto has ganado, cómo está repartido y qué te conviene hacer.</p>
        <p class="wz-p">En 1 minuto lo dejamos a tu medida: tu moneda, tus apartados (cuenta, fondos, bitcoin…) y el reparto que buscas. Todo se guarda solo en este navegador.</p>`,
-      {back:false, next:'Empezar', extra:(W.reopen ? `<div class="hint" style="margin-top:10px;color:#fbbf24">⚠️ Ya tienes la app configurada. Si sigues, el asistente <b>reemplaza tu lista de apartados y tu objetivo</b>. Tus registros no se borran, pero los apartados que no vuelvas a marcar dejarán de verse. Puedes salir con «Cerrar sin cambios».</div>` : '') + `<button type="button" class="secondary" id="wzDemo" style="width:100%;margin-top:10px">Probar con datos de ejemplo</button>` + (W.reopen ? '' : `<div class="sectiondiv"></div><div class="wz-row"><label>¿Ya tienes una copia completa de esta app? Restáurala aquí</label><input type="file" id="wzRestore" accept=".json"></div><div class="wz-err" id="wzRestoreErr"></div>`)});
+      {back:false, next:'Empezar', extra:(W.reopen ? `<div class="hint" style="margin-top:10px;color:#fbbf24">⚠️ Ya tienes la app configurada. Si sigues, el asistente <b>reemplaza tu lista de apartados y tu objetivo</b>. Tus registros no se borran, pero los apartados que no vuelvas a marcar dejarán de verse. Puedes salir con «Cerrar sin cambios».</div>` : '') + `<button type="button" class="secondary" id="wzDemo" style="width:100%;margin-top:10px">Probar con datos de ejemplo</button>` + (W.reopen ? '' : `<div class="sectiondiv"></div><div class="wz-row"><label>¿Ya tienes una copia completa de esta app? Restáurala aquí</label><input type="file" id="wzRestore"></div><details class="pastebox"><summary>¿No te deja elegir el archivo? Pega aquí su contenido</summary><textarea id="wzPaste" rows="4" placeholder="Pega aquí el texto de la copia completa"></textarea><button type="button" class="secondary" id="wzPasteBtn" style="width:100%">Restaurar desde el texto</button></details><div class="wz-err" id="wzRestoreErr"></div>`)});
   } else if(W.step===1){
     html = wizShell('Tu moneda y tu edad',
       `<div class="wz-row"><label>Moneda en la que llevas las cuentas</label><select id="wzCur"><option value="EUR">Euro (€)</option><option value="USD">Dólar ($)</option><option value="GBP">Libra (£)</option></select></div>
@@ -2999,6 +3021,12 @@ function renderWizard(){
     $('wzDemo').onclick = ()=>{
       const go = ()=>{ loadDemoData(); closeWizard(); render(); showTab('resumen'); };
       if(W.reopen) confirmTwice($('wzDemo'), 'Esto sustituye tus datos actuales. ¿Seguro?', go); else go();
+    };
+  }
+  if(W.step===0 && $('wzPasteBtn')){
+    $('wzPasteBtn').onclick = ()=>{
+      try{ restoreFullBackup(JSON.parse($('wzPaste').value.trim())); }
+      catch(e){ $('wzRestoreErr').textContent = 'Eso no es una copia completa de esta app.'; }
     };
   }
   if(W.step===0 && $('wzRestore')){
